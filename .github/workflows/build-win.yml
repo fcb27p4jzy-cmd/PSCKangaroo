@@ -3,6 +3,10 @@ name: Build PSCKangaroo for Windows (RTX 5090 / sm_120)
 on:
   push:
   workflow_dispatch:
+    inputs:
+      pnt:
+        description: "PNT_GROUP_CNT: 5090/5080/5070Ti 用 24；5070 用 48"
+        default: "24"
 
 permissions:
   contents: write
@@ -22,14 +26,21 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Patch project (sm_120 only, faster build)
+      - name: Patch project (sm_120 only + optimal PNT for RTX 5090)
         shell: pwsh
         run: |
+          $pnt = '${{ github.event.inputs.pnt }}'
+          if (-not $pnt) { $pnt = '24' }
+          # 1) Compile for sm_120 only (RTX 5090), faster build
           $p = 'PSCKangaroo.vcxproj'
           $x = Get-Content $p -Raw
           $x = $x -replace 'compute_89,sm_89;compute_86,sm_86;compute_75,sm_75;compute_61,sm_61;compute_120,sm_120', 'compute_120,sm_120'
           Set-Content $p $x -NoNewline
-          Write-Host "Patched CodeGeneration -> compute_120,sm_120"
+          # 2) Patch defs.h: V45_PNT_GROUP_CNT default 48 -> chosen value
+          $d = Get-Content 'defs.h' -Raw
+          $d = $d -replace 'V45_PNT_GROUP_CNT\s+48', "V45_PNT_GROUP_CNT`t$pnt"
+          Set-Content 'defs.h' $d -NoNewline
+          Write-Host "Patched: CodeGeneration=compute_120,sm_120 ; V45_PNT_GROUP_CNT=$pnt"
 
       - name: Build Release x64
         shell: pwsh
@@ -68,6 +79,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         continue-on-error: true
         with:
-          tag_name: v61-win-sm120
-          name: PSCKangaroo Windows x64 (RTX 5090 / sm_120)
+          tag_name: v61-win5090-pnt24
+          name: PSCKangaroo Windows x64 (RTX 5090 optimized, sm_120, PNT=24)
           files: PSCKangaroo-win-x64-sm120.zip
